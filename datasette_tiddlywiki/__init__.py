@@ -70,11 +70,20 @@ def startup(datasette):
 
 async def index(datasette):
     try:
-        datasette.get_database("tiddlywiki")
+        db = datasette.get_database("tiddlywiki")
     except KeyError:
         return Response.text(
             "You need to start Datasette with a tiddlywiki.db database", status=400
         )
+
+    # If a tiddler for `$:/StoryList` exists, we need to replace it
+    story_list = (
+        await db.execute(
+            "select title, meta, text, revision from tiddlers where title = ?",
+            ["$:/StoryList"],
+        )
+    ).first()
+
     html = html_path.read_text("utf-8")
     # Update tiddlers that are baked into page on startup
     def replace_tiddlers(match):
@@ -88,6 +97,22 @@ async def index(datasette):
                 ),
             }
         )
+        # Replace StoryList with one from our DB, if available
+        if story_list:
+            new_tiddlers = []
+            for tiddler in tiddlers:
+                if tiddler["title"] == "$:/StoryList":
+                    replacement = {
+                        "created": "20211222224039169",
+                        "title": "$:/StoryList",
+                        "text": "",
+                        "list": json.loads(story_list["meta"])["fields"]["list"],
+                        "modified": "20211222224039169",
+                    }
+                    new_tiddlers.append(replacement)
+                else:
+                    new_tiddlers.append(tiddler)
+            tiddlers = new_tiddlers
         return '<script class="tiddlywiki-tiddler-store" type="application/json">{}</script>'.format(
             json.dumps(tiddlers).replace("<", "\\u003C")
         )
