@@ -153,3 +153,14 @@ def skip_csrf(scope):
         headers = dict(scope["headers"])
         if headers.get(b"x-requested-with") == b"TiddlyWiki":
             return True
+
+
+@hookimpl
+def menu_links(datasette):
+    try:
+        db = datasette.get_database("tiddlywiki")
+    except KeyError:
+        return
+    return [
+        {"href": datasette.urls.path("/-/tiddlywiki"), "label": "TiddlyWiki"},
+    ]

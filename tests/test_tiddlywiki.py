@@ -29,12 +29,15 @@ async def one_tiddler(ds):
 
 
 @pytest.mark.asyncio
-async def test_homepage_no_tiddlewiki_database():
+async def test_homepage_no_tidlywiki_database():
     ds = Datasette([], memory=True)
     await ds.invoke_startup()
     response = await ds.client.get("/-/tiddlywiki")
     assert response.status_code == 400
     assert "You need to start Datasette with a tiddlywiki.db database" in response.text
+    # Should be no link in global navigation either
+    home_response = await ds.client.get("/")
+    assert '<li><a href="/-/tiddlywiki">TiddlyWiki</a></li>' not in home_response.text
 
 
 @pytest.mark.asyncio
@@ -101,3 +104,10 @@ async def test_delete_tiddler(ds, one_tiddler):
     response = await ds.client.delete("/bags/default/tiddlers/one")
     assert response.status_code == 204
     assert (await db.execute("select count(*) from tiddlers")).single_value() == 0
+
+
+@pytest.mark.asyncio
+async def test_menu_link(ds):
+    response = await ds.client.get("/")
+    assert response.status_code == 200
+    assert '<li><a href="/-/tiddlywiki">TiddlyWiki</a></li>' in response.text
