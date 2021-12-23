@@ -5,7 +5,11 @@
 [![Tests](https://github.com/simonw/datasette-tiddlywiki/workflows/Test/badge.svg)](https://github.com/simonw/datasette-tiddlywiki/actions?query=workflow%3ATest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/datasette-tiddlywiki/blob/main/LICENSE)
 
-Run TiddlyWiki in Datasette and save Tiddlers to a SQLite database
+Run [TiddlyWiki](https://tiddlywiki.com/) in Datasette and save Tiddlers to a SQLite database
+
+## Warning
+
+This plugin does not yet implement any form of authentication. Only run this locally, do not run this on a server.
 
 ## Installation
 
