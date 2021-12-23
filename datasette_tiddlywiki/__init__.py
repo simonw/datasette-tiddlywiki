@@ -9,6 +9,37 @@ html_path = pathlib.Path(__file__).parent / "tiddlywiki.html"
 
 
 @hookimpl
+def register_routes():
+    return [
+        (r"^/-/tiddlywiki$", index),
+        (r"^/status$", status),
+        (r"^/recipes/all/tiddlers.json$", all_tiddlers),
+        (r"^/recipes/all/tiddlers/(?P<title>.*)$", tiddler),
+        # No idea why but it often hits /bags/efault/...
+        (r"^/bags/d?efault/tiddlers/(?P<title>.*)$", delete_tiddler),
+    ]
+
+
+@hookimpl
+def skip_csrf(scope):
+    if scope.get("headers"):
+        headers = dict(scope["headers"])
+        if headers.get(b"x-requested-with") == b"TiddlyWiki":
+            return True
+
+
+@hookimpl
+def menu_links(datasette):
+    try:
+        db = datasette.get_database("tiddlywiki")
+    except KeyError:
+        return
+    return [
+        {"href": datasette.urls.path("/-/tiddlywiki"), "label": "TiddlyWiki"},
+    ]
+
+
+@hookimpl
 def startup(datasette):
     async def inner():
         try:
@@ -133,34 +164,3 @@ async def delete_tiddler(request, datasette):
         )
         return Response.text("", status=204)
     return Response.text("Needs DELETE", status=405)
-
-
-@hookimpl
-def register_routes():
-    return [
-        (r"^/-/tiddlywiki$", index),
-        (r"^/status$", status),
-        (r"^/recipes/all/tiddlers.json$", all_tiddlers),
-        (r"^/recipes/all/tiddlers/(?P<title>.*)$", tiddler),
-        # No idea why but it often hits /bags/efault/...
-        (r"^/bags/d?efault/tiddlers/(?P<title>.*)$", delete_tiddler),
-    ]
-
-
-@hookimpl
-def skip_csrf(scope):
-    if scope.get("headers"):
-        headers = dict(scope["headers"])
-        if headers.get(b"x-requested-with") == b"TiddlyWiki":
-            return True
-
-
-@hookimpl
-def menu_links(datasette):
-    try:
-        db = datasette.get_database("tiddlywiki")
-    except KeyError:
-        return
-    return [
-        {"href": datasette.urls.path("/-/tiddlywiki"), "label": "TiddlyWiki"},
-    ]
