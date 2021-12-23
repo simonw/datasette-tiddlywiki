@@ -1,14 +1,21 @@
 from datasette.app import Datasette
+import json
 import pytest
 import sqlite3
 
 
 @pytest.fixture
 @pytest.mark.asyncio
-async def ds(tmp_path_factory):
+def db_path(tmp_path_factory):
     dbs_dir = tmp_path_factory.mktemp("dbs")
     db_path = str(dbs_dir / "tiddlywiki.db")
     sqlite3.connect(db_path).execute("vacuum")
+    return db_path
+
+
+@pytest.fixture
+@pytest.mark.asyncio
+async def ds(db_path):
     ds = Datasette([db_path])
     await ds.invoke_startup()
     return ds
@@ -41,21 +48,40 @@ async def test_homepage_no_tidlywiki_database():
 
 
 @pytest.mark.asyncio
-async def test_homepage(ds):
+@pytest.mark.parametrize("base_url", (None, "/foo/"))
+async def test_homepage(db_path, base_url):
+    settings = {}
+    if base_url:
+        settings["base_url"] = base_url
+    ds = Datasette([db_path], settings=settings)
+    await ds.invoke_startup()
     response = await ds.client.get("/-/tiddlywiki")
     assert response.status_code == 200
     assert '<meta name="application-name" content="TiddlyWiki" />' in response.text
+    # Extract the baked in tiddlers
+    baked = response.text.split(
+        '<script class="tiddlywiki-tiddler-store" type="application/json">', 1
+    )[1].split("</script>")[0]
+    tiddlers = json.loads(baked)
+    tiddlyweb_host = [t for t in tiddlers if t["title"] == "$:/config/tiddlyweb/host"][
+        0
+    ]
+    expected = "$protocol$//$host${}-/tiddlywiki/".format(base_url or "/")
+    assert tiddlyweb_host == {
+        "title": "$:/config/tiddlyweb/host",
+        "text": expected,
+    }
 
 
 @pytest.mark.asyncio
 async def test_status(ds):
-    response = await ds.client.get("/status")
+    response = await ds.client.get("/-/tiddlywiki/status")
     assert response.json() == {"username": "me", "space": {"recipe": "all"}}
 
 
 @pytest.mark.asyncio
 async def test_get_tiddlers(ds, one_tiddler):
-    response = await ds.client.get("/recipes/all/tiddlers.json")
+    response = await ds.client.get("/-/tiddlywiki/recipes/all/tiddlers.json")
     assert response.json() == [
         {"blah": "json", "title": "one", "text": "this is text", "revision": 1}
     ]
@@ -63,7 +89,7 @@ async def test_get_tiddlers(ds, one_tiddler):
 
 @pytest.mark.asyncio
 async def test_get_tiddler(ds, one_tiddler):
-    response = await ds.client.get("/recipes/all/tiddlers/one")
+    response = await ds.client.get("/-/tiddlywiki/recipes/all/tiddlers/one")
     assert response.json() == {
         "blah": "json",
         "title": "one",
@@ -75,7 +101,7 @@ async def test_get_tiddler(ds, one_tiddler):
 @pytest.mark.asyncio
 async def test_put_tiddler(ds, one_tiddler):
     response = await ds.client.put(
-        "/recipes/all/tiddlers/one",
+        "/-/tiddlywiki/recipes/all/tiddlers/one",
         json={
             "blah": "json",
             "title": "one",
@@ -101,7 +127,7 @@ async def test_put_tiddler(ds, one_tiddler):
 async def test_delete_tiddler(ds, one_tiddler):
     db = ds.get_database("tiddlywiki")
     assert (await db.execute("select count(*) from tiddlers")).single_value() == 1
-    response = await ds.client.delete("/bags/default/tiddlers/one")
+    response = await ds.client.delete("/-/tiddlywiki/bags/default/tiddlers/one")
     assert response.status_code == 204
     assert (await db.execute("select count(*) from tiddlers")).single_value() == 0
 

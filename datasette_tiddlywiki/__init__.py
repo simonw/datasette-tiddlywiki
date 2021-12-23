@@ -2,21 +2,26 @@ from datasette import hookimpl
 from datasette.utils.asgi import Response, NotFound
 import json
 import pathlib
+import re
 import textwrap
 import urllib
 
 html_path = pathlib.Path(__file__).parent / "tiddlywiki.html"
+tiddler_store_re = re.compile(
+    r'<script class="tiddlywiki-tiddler-store" type="application/json">(.*?)</script>',
+    re.DOTALL,
+)
 
 
 @hookimpl
 def register_routes():
     return [
-        (r"^/-/tiddlywiki$", index),
-        (r"^/status$", status),
-        (r"^/recipes/all/tiddlers.json$", all_tiddlers),
-        (r"^/recipes/all/tiddlers/(?P<title>.*)$", tiddler),
-        # No idea why but it often hits /bags/efault/...
-        (r"^/bags/d?efault/tiddlers/(?P<title>.*)$", delete_tiddler),
+        (r"/-/tiddlywiki$", index),
+        (r"/-/tiddlywiki/status$", status),
+        (r"/-/tiddlywiki/recipes/all/tiddlers.json$", all_tiddlers),
+        (r"/-/tiddlywiki/recipes/all/tiddlers/(?P<title>.*)$", tiddler),
+        # No idea why but sometimes hits bags/efault/.. instead of /bags/default/..
+        (r"/-/tiddlywiki/bags/d?efault/tiddlers/(?P<title>.*)$", delete_tiddler),
     ]
 
 
@@ -63,14 +68,31 @@ def startup(datasette):
     return inner
 
 
-async def index(request, datasette):
+async def index(datasette):
     try:
-        db = datasette.get_database("tiddlywiki")
-        return Response.html(html_path.read_text("utf-8"))
+        datasette.get_database("tiddlywiki")
     except KeyError:
         return Response.text(
             "You need to start Datasette with a tiddlywiki.db database", status=400
         )
+    html = html_path.read_text("utf-8")
+    # Update tiddlers that are baked into page on startup
+    def replace_tiddlers(match):
+        tiddlers = json.loads(match.group(1))
+        # Tell TiddlyWeb about the API paths
+        tiddlers.append(
+            {
+                "title": "$:/config/tiddlyweb/host",
+                "text": "$protocol$//$host${}".format(
+                    datasette.urls.path("/-/tiddlywiki/")
+                ),
+            }
+        )
+        return '<script class="tiddlywiki-tiddler-store" type="application/json">{}</script>'.format(
+            json.dumps(tiddlers).replace("<", "\\u003C")
+        )
+
+    return Response.html(tiddler_store_re.sub(replace_tiddlers, html))
 
 
 async def status():
@@ -83,11 +105,7 @@ async def all_tiddlers(datasette):
     for row in (
         await db.execute("select title, meta, text, revision from tiddlers")
     ).rows:
-        tiddler = json.loads(row["meta"])
-        tiddler["title"] = row["title"]
-        tiddler["text"] = row["text"]
-        tiddler["revision"] = row["revision"]
-        tiddlers.append(tiddler)
+        tiddlers.append(tiddler_to_dict(row, row["title"]))
     return Response.json(tiddlers)
 
 
@@ -148,11 +166,7 @@ async def tiddler(request, datasette):
         ).first()
         if row is None:
             raise NotFound("Tiddler not found")
-        output = json.loads(row["meta"])
-        output["title"] = title
-        output["text"] = row["text"]
-        output["revision"] = row["revision"]
-        return Response.json(output)
+        return Response.json(tiddler_to_dict(row, title))
 
 
 async def delete_tiddler(request, datasette):
@@ -164,3 +178,11 @@ async def delete_tiddler(request, datasette):
         )
         return Response.text("", status=204)
     return Response.text("Needs DELETE", status=405)
+
+
+def tiddler_to_dict(row, title):
+    output = json.loads(row["meta"])
+    output["title"] = title
+    output["text"] = row["text"]
+    output["revision"] = row["revision"]
+    return output
