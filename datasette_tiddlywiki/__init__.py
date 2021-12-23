@@ -11,7 +11,10 @@ html_path = pathlib.Path(__file__).parent / "tiddlywiki.html"
 @hookimpl
 def startup(datasette):
     async def inner():
-        db = datasette.get_database("tiddlywiki")
+        try:
+            db = datasette.get_database("tiddlywiki")
+        except KeyError:
+            return
         await db.execute_write(
             textwrap.dedent(
                 """

@@ -31,6 +31,7 @@ async def one_tiddler(ds):
 @pytest.mark.asyncio
 async def test_homepage_no_tiddlewiki_database():
     ds = Datasette([], memory=True)
+    await ds.invoke_startup()
     response = await ds.client.get("/-/tiddlywiki")
     assert response.status_code == 400
     assert "You need to start Datasette with a tiddlywiki.db database" in response.text
