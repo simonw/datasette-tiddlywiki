@@ -1,5 +1,5 @@
 from datasette import hookimpl
-from datasette.utils.asgi import Response, NotFound
+from datasette.utils.asgi import Response, NotFound, Forbidden
 import json
 import pathlib
 import re
@@ -34,14 +34,19 @@ def skip_csrf(scope):
 
 
 @hookimpl
-def menu_links(datasette):
-    try:
-        db = datasette.get_database("tiddlywiki")
-    except KeyError:
-        return
-    return [
-        {"href": datasette.urls.path("/-/tiddlywiki"), "label": "TiddlyWiki"},
-    ]
+def menu_links(datasette, request):
+    async def inner():
+        try:
+            db = datasette.get_database("tiddlywiki")
+        except KeyError:
+            return
+        if not await can_read_tiddlywiki(request.actor, datasette):
+            return
+        return [
+            {"href": datasette.urls.path("/-/tiddlywiki"), "label": "TiddlyWiki"},
+        ]
+
+    return inner
 
 
 @hookimpl
@@ -68,13 +73,15 @@ def startup(datasette):
     return inner
 
 
-async def index(datasette):
+async def index(datasette, request):
     try:
         datasette.get_database("tiddlywiki")
     except KeyError:
         return Response.text(
             "You need to start Datasette with a tiddlywiki.db database", status=400
         )
+    if not await can_read_tiddlywiki(request.actor, datasette):
+        raise Forbidden("Cannot view this TiddlyWiki")
     html = html_path.read_text("utf-8")
     # Update tiddlers that are baked into page on startup
     def replace_tiddlers(match):
@@ -95,11 +102,30 @@ async def index(datasette):
     return Response.html(tiddler_store_re.sub(replace_tiddlers, html))
 
 
-async def status():
-    return Response.json({"username": "me", "space": {"recipe": "all"}})
+async def status(request, datasette):
+    if not await can_read_tiddlywiki(request.actor, datasette):
+        raise Forbidden("Cannot view this TiddlyWiki")
+    username = None
+    anonymous = True
+    read_only = True
+    if request.actor:
+        username = request.actor["id"]
+        anonymous = False
+        read_only = not await can_edit_tiddlywiki(request.actor, datasette)
+
+    return Response.json(
+        {
+            "username": username,
+            "anonymous": anonymous,
+            "read_only": read_only,
+            "space": {"recipe": "all"},
+        }
+    )
 
 
-async def all_tiddlers(datasette):
+async def all_tiddlers(datasette, request):
+    if not await can_read_tiddlywiki(request.actor, datasette):
+        raise Forbidden("Cannot view this TiddlyWiki")
     db = datasette.get_database("tiddlywiki")
     tiddlers = []
     for row in (
@@ -110,9 +136,13 @@ async def all_tiddlers(datasette):
 
 
 async def tiddler(request, datasette):
+    if not await can_read_tiddlywiki(request.actor, datasette):
+        raise Forbidden("Cannot view this TiddlyWiki")
     title = urllib.parse.unquote(request.url_vars["title"])
     db = datasette.get_database("tiddlywiki")
     if request.method == "PUT":
+        if not await can_edit_tiddlywiki(request.actor, datasette):
+            raise Forbidden("You do not have permission to edit this TiddlyWiki")
         # Save it
         body = await request.post_body()
         data = json.loads(body)
@@ -170,6 +200,8 @@ async def tiddler(request, datasette):
 
 
 async def delete_tiddler(request, datasette):
+    if not await can_edit_tiddlywiki(request.actor, datasette):
+        raise Forbidden("You do not have permission to edit this TiddlyWiki")
     title = urllib.parse.unquote(request.url_vars["title"])
     db = datasette.get_database("tiddlywiki")
     if request.method == "DELETE":
@@ -186,3 +218,21 @@ def tiddler_to_dict(row, title):
     output["text"] = row["text"]
     output["revision"] = row["revision"]
     return output
+
+
+async def can_read_tiddlywiki(actor, datasette):
+    if not await datasette.permission_allowed(actor, "view-instance", default=True):
+        return False
+    return await datasette.permission_allowed(
+        actor, "view-database", "tiddlywiki", default=True
+    )
+
+
+async def can_edit_tiddlywiki(actor, datasette):
+    return await datasette.permission_allowed(actor, "edit-tiddlywiki")
+
+
+@hookimpl
+def permission_allowed(actor, action):
+    if action == "edit-tiddlywiki" and actor and actor.get("id") == "root":
+        return True
