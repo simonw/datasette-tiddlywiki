@@ -7,10 +7,6 @@
 
 Run [TiddlyWiki](https://tiddlywiki.com/) in Datasette and save Tiddlers to a SQLite database
 
-## Warning
-
-This plugin does not yet implement any form of authentication. Only run this locally, do not run this on a server.
-
 ## Installation
 
 Install this plugin in the same environment as Datasette.
@@ -19,11 +15,27 @@ Install this plugin in the same environment as Datasette.
 
 ## Usage
 
-Start Datasette with a `tiddlywiki.db` database. You can create it if it does not yet exist using `--create`:
+Start Datasette with a `tiddlywiki.db` database. You can create it if it does not yet exist using `--create`.
 
-    datasette tiddlywiki.db --create
+You need to be signed in as the `root` user to write to the wiki, so use the `--root` option and click on the link it provides:
+
+    % datasette tiddlywiki.db --create --root
+    http://127.0.0.1:8001/-/auth-token?token=456670f1e8d01a8a33b71e17653130de17387336e29afcdfb4ab3d18261e6630
+    # ...
 
 Navigate to `/-/tiddlywiki` on your instance to interact with TiddlyWiki.
+
+## Authentication and permissions
+
+By default, the wiki can be read by anyone who has permission to read the `tiddlywiki.db` database. Only the signed in `root` user can write to it.
+
+You can sign in using the `--root` option described above, or you can set a password for that user using the [datasette-auth-passwords](https://datasette.io/plugins/datasette-auth-passwords) plugin and sign in using the `/-/login` page.
+
+You can use the `edit-tiddlywiki` permission to grant edit permisions to other users, using another plugin such as [datasette-permissions-sql](https://datasette.io/plugins/datasette-permissions-sql).
+
+You can use the `view-database` permission against the `tiddlywiki` database to control who can view the wiki.
+
+Datasette's permissions mechanism is described in full in [the Datasette documentation](https://docs.datasette.io/en/stable/authentication.html).
 
 ## Development
 
