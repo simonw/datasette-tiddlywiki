@@ -202,3 +202,24 @@ async def test_cannot_view_tiddlywiki(db_path, one_tiddler, reason):
         # Anonymous should not
         anon_response = await ds.client.get(path)
         assert anon_response.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("can_view", (True, False))
+async def test_menulink(db_path, can_view):
+    # Configure so only root can view
+    ds = Datasette(
+        [db_path], metadata={"databases": {"tiddlywiki": {"allow": {"id": "root"}}}}
+    )
+    await ds.invoke_startup()
+
+    cookies = {}
+    if can_view:
+        cookies = root_cookies(ds)
+
+    response = await ds.client.get("/", cookies=cookies)
+    fragment = '<li><a href="/-/tiddlywiki">TiddlyWiki</a></li>'
+    if can_view:
+        assert fragment in response.text
+    else:
+        assert fragment not in response.text
