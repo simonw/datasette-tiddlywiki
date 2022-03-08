@@ -7,6 +7,8 @@
 
 Run [TiddlyWiki](https://tiddlywiki.com/) in Datasette and save Tiddlers to a SQLite database
 
+Read more about this project [on my blog](https://simonwillison.net/2021/Dec/24/datasette-tiddlywiki/).
+
 ## Installation
 
 Install this plugin in the same environment as Datasette.
